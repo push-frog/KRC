@@ -10,6 +10,8 @@ if sys.platform == "win32":
         pass
 
 from .client import KeeneticAdvancedClient
+from . import sysmon as _sysmon
+_sysmon.install()
 from .gui import KeeneticAdvancedGUI
 from .util import (
     BATCH_CHUNK_SIZE,
