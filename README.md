@@ -13,10 +13,22 @@ Keenetic® — торговая марка соответствующего пр
 ## Запуск
 
 ```bash
-pip install telnetlib3
+pip install -r requirements.txt
 python keenetic.py
 ```
 
 Telnet нужно включить на роутере: веб-интерфейс → Системные настройки → Опции.
 
 Локальные настройки подключения сохраняются в `keenetic_settings.json` и в git не попадают.
+
+## Структура
+
+Точка входа не изменилась: `python keenetic.py`.
+
+```
+keenetic.py          # запуск GUI
+krc/util.py          # маски, декодирование вывода
+krc/client.py        # Telnet-клиент Keenetic
+krc/dialogs.py       # диалоговые окна
+krc/gui.py           # главное окно
+```
