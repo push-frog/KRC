@@ -99,7 +99,7 @@ def main():
         "    PFDiagnosticDialog,\n"
         "    SysmonRawDialog,\n"
         ")\n"
-        "from .util import DEFAULT_INTERFACE, save_routes_to_file\n\n"
+        "from .util import BATCH_CHUNK_SIZE, DEFAULT_INTERFACE, save_routes_to_file\n\n"
         + block("KeeneticAdvancedGUI", "main"),
         encoding="utf-8",
     )
