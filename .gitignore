@@ -1,0 +1,7 @@
+keenetic_settings.json
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
