@@ -20,18 +20,24 @@ def _cyr_score(s: str) -> int:
 def decode_output(data: str) -> str:
     if not data:
         return data
+    if _cyr_score(data) > 0:
+        return data
+    raw = None
     try:
         raw = data.encode('latin-1')
     except Exception:
-        return data.replace('\ufffd', '')
+        return data
     candidates = [data]
-    for enc in ('utf-8', 'cp1251'):
+    for enc in ('utf-8', 'cp1251', 'cp866'):
         try:
             candidates.append(raw.decode(enc))
         except Exception:
             pass
-    best = max(candidates, key=lambda s: (_cyr_score(s), -s.count('\ufffd'), -s.count('\x00')))
-    return best.replace('\ufffd', '')
+    best = max(
+        candidates,
+        key=lambda s: (_cyr_score(s), -s.count('\ufffd')),
+    )
+    return best
 
 
 def cidr_to_mask(cidr: int) -> str:
