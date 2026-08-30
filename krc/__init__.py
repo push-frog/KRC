@@ -14,6 +14,8 @@ from . import sysmon as _sysmon
 _sysmon.install()
 from . import natparse as _natparse
 _natparse.install()
+from . import rci as _rci
+_rci.install()
 from .gui import KeeneticAdvancedGUI
 from .util import (
     BATCH_CHUNK_SIZE,
