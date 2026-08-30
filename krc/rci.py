@@ -3,7 +3,7 @@ import hashlib
 import json
 from http.cookiejar import CookieJar
 from typing import Any, List
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.request import (
     HTTPCookieProcessor,
     HTTPDigestAuthHandler,
@@ -17,6 +17,18 @@ from . import natparse
 
 def _md5(s: str) -> str:
     return hashlib.md5(s.encode("utf-8")).hexdigest()
+
+
+def client_creds(client):
+    user = (
+        getattr(client, "user", None)
+        or getattr(client, "username", None)
+        or getattr(client, "login", None)
+        or "admin"
+    )
+    password = getattr(client, "password", None) or getattr(client, "passwd", None) or ""
+    host = getattr(client, "host", None) or getattr(client, "ip", None) or "192.168.1.1"
+    return host, user, password
 
 
 class RciSession:
@@ -45,7 +57,7 @@ class RciSession:
         try:
             resp = self._open("/auth")
             resp.read()
-            if resp.status == 200:
+            if getattr(resp, "status", 200) == 200:
                 self.authed = True
                 return True
         except HTTPError as e:
@@ -104,8 +116,8 @@ def _as_list(data: Any) -> List[Any]:
             if isinstance(val, list):
                 return val
             if isinstance(val, dict):
-                return list(val.values()) if val and isinstance(
-                    next(iter(val.values()), None), dict) else [val]
+                first = next(iter(val.values()), None)
+                return list(val.values()) if isinstance(first, dict) else [val]
         if any(k in data for k in ("ip", "mac", "name", "protocol", "port",
                                    "to-host", "to-address", "index")):
             return [data]
@@ -197,9 +209,10 @@ def _fetch_paths(sess: RciSession, paths):
 async def get_port_forwardings(self, ipv6=False):
     raw_parts = []
     rules: List[dict] = []
-    sess = RciSession(self.host, self.username, self.password)
+    host, user, password = client_creds(self)
+    sess = RciSession(host, user, password)
     if sess.ndm_login():
-        raw_parts.append("RCI: NDM auth OK")
+        raw_parts.append(f"RCI: NDM auth OK as {user}")
     else:
         raw_parts.append(f"RCI: NDM auth failed ({sess.last_error})")
     if ipv6:
@@ -225,7 +238,8 @@ async def get_port_forwardings(self, ipv6=False):
 
 
 async def get_clients(self):
-    sess = RciSession(self.host, self.username, self.password)
+    host, user, password = client_creds(self)
+    sess = RciSession(host, user, password)
     sess.ndm_login()
     data, _, _ = _fetch_paths(sess, [
         "/rci/show/ip/hotspot",
