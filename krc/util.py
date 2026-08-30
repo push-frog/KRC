@@ -13,20 +13,25 @@ def strip_ansi(data: str) -> str:
     return data
 
 
+def _cyr_score(s: str) -> int:
+    return sum(1 for c in s if '\u0400' <= c <= '\u04FF')
+
+
 def decode_output(data: str) -> str:
     if not data:
         return data
-    def looks_like_mojibake(s):
-        return sum(1 for c in s if '\x80' <= c <= '\xFF') > 2
-    if looks_like_mojibake(data):
+    try:
+        raw = data.encode('latin-1')
+    except Exception:
+        return data.replace('\ufffd', '')
+    candidates = [data]
+    for enc in ('utf-8', 'cp1251'):
         try:
-            return data.encode('latin-1').decode('cp1251')
+            candidates.append(raw.decode(enc))
         except Exception:
-            try:
-                return data.encode('latin-1').decode('utf-8')
-            except Exception:
-                pass
-    return data
+            pass
+    best = max(candidates, key=lambda s: (_cyr_score(s), -s.count('\ufffd'), -s.count('\x00')))
+    return best.replace('\ufffd', '')
 
 
 def cidr_to_mask(cidr: int) -> str:
