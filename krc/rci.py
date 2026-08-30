@@ -14,6 +14,9 @@ from urllib.request import (
 
 from . import natparse
 
+SHOW_STATIC = [{"show": {"rc": {"ip": {"static": {}}}}}]
+SHOW_HOTSPOT = [{"show": {"ip": {"hotspot": {}}}}]
+
 
 def _md5(s: str) -> str:
     return hashlib.md5(s.encode("utf-8")).hexdigest()
@@ -94,6 +97,15 @@ class RciSession:
         except HTTPError as e:
             raise RuntimeError(f"{path} HTTP {e.code}") from e
 
+    def post_json(self, path: str, payload) -> Any:
+        try:
+            with self._open(path, data=payload) as resp:
+                raw = resp.read()
+            text = raw.decode("utf-8")
+            return json.loads(text) if text.strip() else None
+        except HTTPError as e:
+            raise RuntimeError(f"POST {path} HTTP {e.code}") from e
+
     def digest_get_json(self, path: str) -> Any:
         mgr = HTTPPasswordMgrWithDefaultRealm()
         mgr.add_password(None, self.base, self.user, self.password)
@@ -104,7 +116,29 @@ class RciSession:
         return json.loads(text) if text.strip() else None
 
 
+def unwrap_rules(data: Any) -> List[Any]:
+    if data is None:
+        return []
+    if isinstance(data, list):
+        if data and isinstance(data[0], dict) and "interface" in data[0] and "port" in data[0]:
+            return data
+        out = []
+        for item in data:
+            out.extend(unwrap_rules(item))
+        return out
+    if isinstance(data, dict):
+        if "interface" in data and "port" in data:
+            return [data]
+        for key in ("show", "rc", "ip", "static", "nat", "host"):
+            if key in data:
+                return unwrap_rules(data[key])
+    return []
+
+
 def _as_list(data: Any) -> List[Any]:
+    got = unwrap_rules(data)
+    if got:
+        return got
     if data is None:
         return []
     if isinstance(data, list):
@@ -115,9 +149,6 @@ def _as_list(data: Any) -> List[Any]:
             val = data.get(key)
             if isinstance(val, list):
                 return val
-            if isinstance(val, dict):
-                first = next(iter(val.values()), None)
-                return list(val.values()) if isinstance(first, dict) else [val]
         if any(k in data for k in ("ip", "mac", "name", "protocol", "port",
                                    "to-host", "to-address", "index")):
             return [data]
@@ -154,10 +185,14 @@ def parse_nat_json(data: Any) -> List[dict]:
             cmt = f"[off] {cmt}"
         elif disabled:
             cmt = "[off]"
+        before = len(rules)
         natparse._add(
             rules, seen, proto, iface, ep, dest, to_port or port, cmt,
             json.dumps(item, ensure_ascii=False),
         )
+        if len(rules) > before:
+            rules[-1]["index"] = str(_first(item, "index"))
+            rules[-1]["disabled"] = disabled
     return rules
 
 
@@ -215,25 +250,23 @@ async def get_port_forwardings(self, ipv6=False):
         raw_parts.append(f"RCI: NDM auth OK as {user}")
     else:
         raw_parts.append(f"RCI: NDM auth failed ({sess.last_error})")
-    if ipv6:
-        paths = ["/rci/show/rc/ipv6/static", "/rci/show/ipv6/static"]
-    else:
-        paths = [
+    data = None
+    used = ""
+    try:
+        data = sess.post_json("/rci/", SHOW_STATIC)
+        used = "POST /rci/ show.rc.ip.static"
+        raw_parts.append(f">>> {used} OK")
+    except Exception as e:
+        raw_parts.append(f">>> POST /rci/ ({e})")
+        data, used, notes = _fetch_paths(sess, [
             "/rci/show/rc/ip/static",
             "/rci/show/ip/nat",
-            "/rci/show/ip/static",
-        ]
-    data, used, notes = _fetch_paths(sess, paths)
-    raw_parts.extend(notes)
+        ])
+        raw_parts.extend(notes)
     if data is not None:
         rules = parse_nat_json(data)
         dump = json.dumps(data, ensure_ascii=False, indent=2)
         raw_parts.append(f"source {used}, rules={len(rules)}\n{dump[:12000]}")
-    if not rules:
-        tel_rules, tel_raw = await natparse.get_port_forwardings(self, ipv6=ipv6)
-        raw_parts.append(tel_raw)
-        if tel_rules:
-            rules = tel_rules
     return rules, "\n".join(raw_parts)
 
 
@@ -241,10 +274,14 @@ async def get_clients(self):
     host, user, password = client_creds(self)
     sess = RciSession(host, user, password)
     sess.ndm_login()
-    data, _, _ = _fetch_paths(sess, [
-        "/rci/show/ip/hotspot",
-        "/rci/show/ip/hotspot/host",
-    ])
+    data = None
+    try:
+        data = sess.post_json("/rci/", SHOW_HOTSPOT)
+    except Exception:
+        data, _, _ = _fetch_paths(sess, [
+            "/rci/show/ip/hotspot",
+            "/rci/show/ip/hotspot/host",
+        ])
     clients = parse_hotspot_json(data) if data is not None else []
     if clients:
         return clients
