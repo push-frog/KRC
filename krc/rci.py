@@ -22,6 +22,10 @@ def _md5(s: str) -> str:
     return hashlib.md5(s.encode("utf-8")).hexdigest()
 
 
+def _sha256(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
 def client_creds(client):
     user = (
         getattr(client, "user", None)
@@ -75,18 +79,20 @@ class RciSession:
             self.last_error = self.last_error or "no X-NDM-Challenge"
             return False
         ha1 = _md5(f"{self.user}:{realm}:{self.password}")
-        token = _md5(challenge + ha1)
-        try:
-            resp = self._open("/auth", {"login": self.user, "password": token})
-            resp.read()
-            self.authed = True
-            return True
-        except HTTPError as e:
-            self.last_error = f"POST /auth HTTP {e.code}"
-            return False
-        except Exception as e:
-            self.last_error = f"POST /auth {e}"
-            return False
+        tokens = [_sha256(challenge + ha1), _md5(challenge + ha1)]
+        last = ""
+        for token in tokens:
+            try:
+                resp = self._open("/auth", {"login": self.user, "password": token})
+                resp.read()
+                self.authed = True
+                return True
+            except HTTPError as e:
+                last = f"POST /auth HTTP {e.code}"
+            except Exception as e:
+                last = f"POST /auth {e}"
+        self.last_error = last
+        return False
 
     def get_json(self, path: str) -> Any:
         try:
