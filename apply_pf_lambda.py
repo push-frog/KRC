@@ -1,51 +1,46 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import re
 from pathlib import Path
 
 GUI = Path(__file__).resolve().parent / "krc" / "gui.py"
 
-OLD = '''            self.root.after(
-                0, lambda: self._log(
-                    f"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {e}", "ERROR"))
-'''
-
-NEW = '''            err = str(e)
-            self.root.after(
-                0, lambda m=err: self._log(
-                    f"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {m}", "ERROR"))
-'''
-
-# looser fallbacks
-OLD2 = 'f"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {e}", "ERROR"'
-NEW2 = 'f"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {m}", "ERROR"'
-
 
 def main():
     text = GUI.read_text(encoding="utf-8")
-    if "lambda m=err:" in text and "[PF]" in text:
-        print("GUI PF lambda already patched")
+    if "lambda m=err:" in text or "lambda m=err :" in text:
+        print("Already patched:", GUI)
         return 0
-    if OLD in text:
-        text = text.replace(OLD, NEW, 1)
-    elif OLD2 in text:
-        text = text.replace(
-            "self.root.after(\n                0, lambda: self._log(\n                    f\"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {e}\", \"ERROR\"))",
-            "err = str(e)\n            self.root.after(\n                0, lambda m=err: self._log(\n                    f\"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {m}\", \"ERROR\"))",
-            1,
-        )
-        if OLD2 in text and "lambda m=err" not in text:
-            text = text.replace(
-                "lambda: self._log(\n                    f\"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {e}\", \"ERROR\")",
-                "lambda m=str(e): self._log(\n                    f\"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {m}\", \"ERROR\")",
+
+    pat = re.compile(
+        r"self\.root\.after\(\s*0,\s*lambda:\s*self\._log\(\s*"
+        r"f\"\[PF\][^\"]*\{e\}[^\"]*\",\s*\"ERROR\"\s*\)\s*\)",
+        re.S,
+    )
+    repl = (
+        "err = f\"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {e}\"\n"
+        "            self.root.after(0, lambda m=err: self._log(m, \"ERROR\"))"
+    )
+    new, n = pat.subn(repl, text, count=1)
+    if n == 0:
+        # last-resort: replace only the f-string inside existing lambda
+        if '{e}", "ERROR"' in text and "[PF]" in text:
+            new = text.replace(
+                'f"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {e}", "ERROR"',
+                'err, "ERROR"',
                 1,
             )
-    else:
-        # generic: bind except e used in after-lambda
-        needle = 'f"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {e}"'
-        if needle not in text:
-            raise SystemExit("PF error log line not found in gui.py")
-        text = text.replace(needle, 'f"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {str(e)}"', 1)
-    GUI.write_text(text, encoding="utf-8")
+            if "err = f" not in new:
+                new = new.replace(
+                    "except Exception as e:",
+                    "except Exception as e:\n"
+                    "            err = f\"[PF] \u041e\u0448\u0438\u0431\u043a\u0430: {e}\"",
+                    1,
+                )
+            n = 1
+        else:
+            raise SystemExit("Could not find PF after-lambda in krc/gui.py")
+    GUI.write_text(new, encoding="utf-8")
     print("Patched", GUI)
     return 0
 
